@@ -1,0 +1,8 @@
+{
+  "name": "GetContext",
+  "description": "Analyze GitHub repositories, estimate token savings, and retrieve relevant code context with AI explanations.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GetContext — Repository Context Retrieval Engine</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      background-color: #0f172a;
+      color: #f8fafc;
+    }
+    code, pre {
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .gradient-text {
+      background: linear-gradient(135deg, #38bdf8 0%, #818cf8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+  </style>
+</head>
+<body class="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
+
+  <!-- Header -->
+  <header class="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-50">
+    <div class="max-w-6xl mx-auto px-4 py-3.5 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <div class="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center font-bold text-white shadow-lg shadow-indigo-500/20">
+          G
+        </div>
+        <div>
+          <span class="font-bold text-lg text-white tracking-tight">GetContext</span>
+          <span class="ml-2 text-xs px-2 py-0.5 rounded-full bg-indigo-950 text-indigo-300 border border-indigo-800 font-mono">v1.0</span>
+        </div>
+      </div>
+      <div class="flex items-center space-x-3">
+        <div id="api-status-badge" class="flex items-center space-x-2 text-xs px-3 py-1.5 rounded-full bg-slate-800 border border-slate-700 text-slate-400">
+          <span class="w-2 h-2 rounded-full bg-slate-500" id="status-dot"></span>
+          <span id="status-text">Checking status...</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="flex-1 max-w-6xl w-full mx-auto px-4 py-8 space-y-8">
+
+    <!-- Hero / Repository Input -->
+    <section class="bg-slate-900 border border-slate-800 rounded-2xl p-6 md:p-8 shadow-xl">
+      <div class="max-w-3xl space-y-4">
+        <h1 class="text-2xl md:text-3xl font-bold tracking-tight text-white">
+          Precision Repository Context Retrieval
+        </h1>
+        <p class="text-slate-400 text-sm md:text-base leading-relaxed">
+          Analyze any public GitHub repository, extract token-optimized file snippets, and ask targeted questions to drastically reduce LLM context window overhead.
+        </p>
+
+        <form id="analyze-form" class="pt-2 flex flex-col sm:flex-row gap-3">
+          <div class="relative flex-1">
+            <input 
+              type="text" 
+              id="repo-url-input" 
+              placeholder="e.g. https://github.com/expressjs/express or 'demo'" 
+              class="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all"
+              required
+            >
+          </div>
+          <button 
+            type="submit" 
+            id="analyze-btn" 
+            class="bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white font-medium text-sm px-6 py-3 rounded-xl transition-colors flex items-center justify-center space-x-2 shadow-lg shadow-indigo-600/20 disabled:opacity-50 cursor-pointer"
+          >
+            <span>Analyze Repo</span>
+          </button>
+          <button 
+            type="button" 
+            id="demo-btn" 
+            class="bg-slate-800 hover:bg-slate-700 active:bg-slate-800 text-slate-200 font-medium text-sm px-5 py-3 rounded-xl border border-slate-700 transition-colors flex items-center justify-center space-x-1.5 cursor-pointer"
+          >
+            <span>⚡ Load Demo (TaskFlow)</span>
+          </button>
+        </form>
+
+        <div id="error-message" class="hidden p-4 bg-red-950/60 border border-red-800/80 rounded-xl text-red-300 text-sm"></div>
+        <div id="degraded-notice" class="hidden p-4 bg-amber-950/60 border border-amber-800/80 rounded-xl text-amber-300 text-sm"></div>
+      </div>
+    </section>
+
+    <!-- Analysis Dashboard (hidden until repo loaded) -->
+    <div id="dashboard-section" class="hidden space-y-8">
+
+      <!-- Repo Metadata Bar -->
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 md:col-span-2">
+          <div class="text-xs font-semibold uppercase text-slate-400 tracking-wider mb-1">Indexed Repository</div>
+          <h2 id="repo-name" class="text-xl font-bold text-white flex items-center gap-2">
+            <span>-</span>
+          </h2>
+          <p id="repo-desc" class="text-xs text-slate-400 mt-2 line-clamp-2">-</p>
+          <div id="repo-tech" class="flex flex-wrap gap-1.5 mt-3"></div>
+        </div>
+
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 flex flex-col justify-between">
+          <div class="text-xs font-semibold uppercase text-slate-400 tracking-wider">Repository Token Baseline</div>
+          <div class="my-2">
+            <span id="repo-tokens" class="text-2xl font-bold text-indigo-400 font-mono">0</span>
+            <span class="text-xs text-slate-500 ml-1">tokens</span>
+          </div>
+          <div id="repo-files-count" class="text-xs text-slate-400">-</div>
+        </div>
+
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 flex flex-col justify-between">
+          <div class="text-xs font-semibold uppercase text-slate-400 tracking-wider">Indexing Status</div>
+          <div class="my-2 flex items-center space-x-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
+            <span class="text-sm font-semibold text-emerald-300">Ready for Context Retrieval</span>
+          </div>
+          <div id="repo-branch" class="text-xs text-slate-400">Branch: -</div>
+        </div>
+      </div>
+
+      <!-- Main Workbench (2 Columns: Query & Results / File Structure) -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        
+        <!-- Left 2 Cols: Question Workbench & AI Explanation -->
+        <div class="lg:col-span-2 space-y-6">
+
+          <!-- Query Form -->
+          <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
+            <h3 class="text-lg font-semibold text-white flex items-center justify-between">
+              <span>Ask About Codebase Context</span>
+              <span class="text-xs text-slate-400 font-normal">Context-filtered answer engine</span>
+            </h3>
+
+            <!-- Quick Presets -->
+            <div id="preset-queries" class="flex flex-wrap gap-2 text-xs">
+              <span class="text-slate-500 py-1">Quick questions:</span>
+              <button class="preset-btn bg-slate-800 hover:bg-slate-700 text-slate-300 px-2.5 py-1 rounded-lg border border-slate-700 transition-colors cursor-pointer">
+                How does authentication work?
+              </button>
+              <button class="preset-btn bg-slate-800 hover:bg-slate-700 text-slate-300 px-2.5 py-1 rounded-lg border border-slate-700 transition-colors cursor-pointer">
+                Where are tasks stored and created?
+              </button>
+              <button class="preset-btn bg-slate-800 hover:bg-slate-700 text-slate-300 px-2.5 py-1 rounded-lg border border-slate-700 transition-colors cursor-pointer">
+                How are errors handled in middleware?
+              </button>
+            </div>
+
+            <form id="query-form" class="space-y-3">
+              <textarea 
+                id="query-input" 
+                rows="3" 
+                placeholder="Ask a technical question about this repository... (Press Cmd/Ctrl + Enter to submit)" 
+                class="w-full bg-slate-950 border border-slate-700 rounded-xl p-3.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all resize-none"
+                required
+              ></textarea>
+              <div id="query-error" class="hidden p-3 bg-red-950/80 border border-red-800 rounded-xl text-red-300 text-xs"></div>
+              <div class="flex items-center justify-between">
+                <span class="text-xs text-slate-500">Press Cmd/Ctrl + Enter to submit</span>
+                <button 
+                  type="submit" 
+                  id="query-btn" 
+                  class="bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white font-medium text-sm px-6 py-2.5 rounded-xl transition-colors flex items-center space-x-2 shadow-md shadow-indigo-600/20 disabled:opacity-50 cursor-pointer"
+                >
+                  <span>Retrieve Context & Explain</span>
+                </button>
+              </div>
+            </form>
+          </div>
+
+          <!-- Query Loading State -->
+          <div id="query-loading" class="hidden bg-slate-900 border border-slate-800 rounded-2xl p-8 text-center space-y-3">
+            <div class="inline-block w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+            <p class="text-sm text-slate-300">Retrieving relevant file snippets and generating AI explanation...</p>
+          </div>
+
+          <!-- Query Result Block -->
+          <div id="query-result" class="hidden space-y-6">
+
+            <!-- Token Optimization Banner -->
+            <div class="bg-gradient-to-r from-indigo-950 to-slate-900 border border-indigo-800/60 rounded-2xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div>
+                <div class="text-xs uppercase font-semibold text-indigo-400 tracking-wider">Context Optimization Performance</div>
+                <div class="text-xl font-bold text-white mt-1">
+                  <span id="res-reduction" class="text-emerald-400">0%</span> Token Reduction
+                </div>
+              </div>
+              <div class="flex items-center space-x-6 text-xs font-mono bg-slate-950/80 px-4 py-2.5 rounded-xl border border-slate-800">
+                <div>
+                  <span class="text-slate-500 block">Repository</span>
+                  <span id="res-repo-tokens" class="text-slate-300 font-bold">0</span>
+                </div>
+                <div class="text-slate-600">→</div>
+                <div>
+                  <span class="text-indigo-400 block">Retrieved Context</span>
+                  <span id="res-context-tokens" class="text-indigo-300 font-bold">0</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Generate Context Action Bar -->
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
+              <div class="flex items-center space-x-3">
+                <div class="p-2.5 bg-indigo-950 border border-indigo-800/80 rounded-xl text-indigo-400 shrink-0">
+                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                  </svg>
+                </div>
+                <div>
+                  <h4 class="text-sm font-semibold text-white">Generate Prompt-Ready Context</h4>
+                  <p class="text-xs text-slate-400">Format retrieved context into Markdown ready to paste into LLMs</p>
+                </div>
+              </div>
+              <button 
+                id="generate-context-btn" 
+                type="button" 
+                class="bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white font-medium text-xs px-5 py-2.5 rounded-xl transition-all flex items-center justify-center space-x-2 shadow-md shadow-indigo-600/20 shrink-0 cursor-pointer"
+              >
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path>
+                </svg>
+                <span id="generate-btn-label">Generate Context</span>
+              </button>
+            </div>
+
+            <!-- Formatted Context Output Box -->
+            <div id="formatted-context-box" class="hidden bg-slate-950 border border-indigo-900/80 rounded-2xl p-5 space-y-3 shadow-inner">
+              <div class="flex items-center justify-between pb-2 border-b border-slate-800">
+                <div class="flex items-center space-x-2">
+                  <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+                  <h4 class="text-xs font-mono font-semibold uppercase tracking-wider text-indigo-300">Formatted Markdown Context Block</h4>
+                </div>
+                <div class="flex items-center space-x-2">
+                  <button id="copy-box-btn" class="text-xs bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg border border-indigo-500 transition-colors flex items-center space-x-1.5 cursor-pointer">
+                    <span>📋 Copy Markdown</span>
+                  </button>
+                  <button id="close-box-btn" class="text-xs text-slate-400 hover:text-white px-2 py-1 cursor-pointer">✕</button>
+                </div>
+              </div>
+              <textarea id="formatted-context-textarea" readonly rows="12" class="w-full bg-slate-900 border border-slate-800 rounded-xl p-3.5 text-xs font-mono text-slate-200 focus:outline-none focus:border-indigo-500 resize-y"></textarea>
+              <div id="box-copy-status" class="text-xs text-emerald-400 font-medium">✓ Markdown context copied to clipboard!</div>
+            </div>
+
+            <!-- Answer Section -->
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-3">
+              <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+                <h4 class="font-semibold text-white text-base">Explanation</h4>
+                <span id="res-source-tag" class="text-xs px-2.5 py-1 rounded-full bg-slate-800 text-slate-400 font-mono">
+                  gemini
+                </span>
+              </div>
+              <div id="res-answer" class="text-slate-200 text-sm leading-relaxed whitespace-pre-wrap font-sans space-y-2"></div>
+            </div>
+
+            <!-- Retrieved Relevant Files -->
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
+              <h4 class="font-semibold text-white text-base flex items-center justify-between">
+                <span>Retrieved Context Snippets</span>
+                <span id="res-file-count" class="text-xs text-slate-400 font-normal">0 files retrieved</span>
+              </h4>
+              <div id="res-files-list" class="space-y-3"></div>
+            </div>
+
+          </div>
+
+        </div>
+
+        <!-- Right 1 Col: Repository File Tree & Tech Overview -->
+        <div class="space-y-6">
+          <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
+            <h3 class="text-base font-semibold text-white flex items-center justify-between">
+              <span>Indexed File Structure</span>
+              <span id="tree-file-count" class="text-xs text-slate-400">0 items</span>
+            </h3>
+            <div id="file-tree-container" class="bg-slate-950 border border-slate-800 rounded-xl p-3 font-mono text-xs text-slate-300 max-h-96 overflow-y-auto space-y-1">
+              <div class="text-slate-500 italic">No repository loaded yet.</div>
+            </div>
+          </div>
+
+          <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-3 text-xs text-slate-400">
+            <h4 class="font-semibold text-slate-200 text-sm">How GetContext Works</h4>
+            <p>1. <strong class="text-slate-300">Analysis & Scoring</strong>: Ranks repository files using path depth, extension heuristics, and importance scoring.</p>
+            <p>2. <strong class="text-slate-300">Context Extraction</strong>: Filters the codebase down to the top relevant file snippets matching your specific prompt.</p>
+            <p>3. <strong class="text-slate-300">Grounding & QA</strong>: Passes filtered context to Gemini server-side for precise technical answers.</p>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="border-t border-slate-800 bg-slate-900/40 py-4 text-center text-xs text-slate-500">
+    GetContext AI Repository Context Retrieval &bull; Server-Side Gemini AI Integration
+  </footer>
+
+  <script>
+    let currentRepoId = null;
+    let currentRepoFullName = '';
+    let lastQueryData = null;
+    let lastQueryText = '';
+
+    // Helper: file language for code fences
+    function getFileLang(filePath) {
+      if (!filePath) return '';
+      const ext = filePath.split('.').pop().toLowerCase();
+      const langMap = {
+        js: 'javascript',
+        jsx: 'jsx',
+        ts: 'typescript',
+        tsx: 'tsx',
+        py: 'python',
+        json: 'json',
+        html: 'html',
+        css: 'css',
+        md: 'markdown',
+        sh: 'bash',
+        yml: 'yaml',
+        yaml: 'yaml',
+        go: 'go',
+        rs: 'rust',
+        java: 'java',
+        c: 'c',
+        cpp: 'cpp'
+      };
+      return langMap[ext] || ext || '';
+    }
+
+    // Helper: format context into copyable markdown
+    function generateFormattedContextMarkdown(fullName, queryText, queryData) {
+      if (!queryData) return '';
+      const contextTokens = (queryData.contextTokens || 0).toLocaleString();
+      const repositoryTokens = (queryData.repositoryTokens || 0).toLocaleString();
+      const reductionPercentage = queryData.reductionPercentage || 0;
+
+      let md = `## Repository Context: ${fullName || 'Repository'}\n\n`;
+      md += `**Question:** ${queryText || ''}\n\n`;
+      md += `**Relevant files** (retrieved via CONTEXTX — ${contextTokens} tokens vs ${repositoryTokens} full repo, ${reductionPercentage}% smaller):\n\n`;
+
+      (queryData.relevantFiles || []).forEach(f => {
+        const ext = getFileLang(f.path);
+        md += `### ${f.path}\n\`\`\`${ext}\n${(f.snippet || '').trim()}\n\`\`\`\n\n`;
+      });
+
+      return md.trim();
+    }
+
+    // Check API Status
+    async function checkHealth() {
+      try {
+        const res = await fetch('/api/health');
+        const data = await res.json();
+        const dot = document.getElementById('status-dot');
+        const text = document.getElementById('status-text');
+        
+        if (data.hasGeminiKey) {
+          dot.className = 'w-2 h-2 rounded-full bg-emerald-400';
+          text.textContent = 'Gemini Live AI Active';
+          text.className = 'text-emerald-300';
+        } else {
+          dot.className = 'w-2 h-2 rounded-full bg-amber-400';
+          text.textContent = 'Offline Fallback Mode';
+          text.className = 'text-amber-300';
+        }
+      } catch (err) {
+        document.getElementById('status-text').textContent = 'Server Offline';
+      }
+    }
+
+    // Analyze Repo
+    async function analyzeRepo(url) {
+      const errorDiv = document.getElementById('error-message');
+      const degradedDiv = document.getElementById('degraded-notice');
+      const analyzeBtn = document.getElementById('analyze-btn');
+      
+      errorDiv.classList.add('hidden');
+      degradedDiv.classList.add('hidden');
+      analyzeBtn.disabled = true;
+      analyzeBtn.innerHTML = '<span>Analyzing...</span>';
+
+      try {
+        const res = await fetch('/api/repository/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url })
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          throw new Error(data.message || 'Failed to analyze repository');
+        }
+
+        if (data.degraded) {
+          degradedDiv.textContent = data.message;
+          degradedDiv.classList.remove('hidden');
+        }
+
+        currentRepoId = data.id;
+        currentRepoFullName = data.fullName;
+        renderDashboard(data);
+      } catch (err) {
+        errorDiv.textContent = err.message;
+        errorDiv.classList.remove('hidden');
+      } finally {
+        analyzeBtn.disabled = false;
+        analyzeBtn.innerHTML = '<span>Analyze Repo</span>';
+      }
+    }
+
+    function renderDashboard(data) {
+      document.getElementById('dashboard-section').classList.remove('hidden');
+      document.getElementById('repo-name').textContent = data.fullName;
+      document.getElementById('repo-desc').textContent = data.description || 'No description provided.';
+      document.getElementById('repo-tokens').textContent = (data.repositoryTokens || 0).toLocaleString();
+      document.getElementById('repo-files-count').textContent = `${data.fetchedFileCount} / ${data.fileCount} files indexed`;
+      document.getElementById('repo-branch').textContent = `Branch: ${data.defaultBranch}`;
+
+      // Tech badges
+      const techContainer = document.getElementById('repo-tech');
+      techContainer.innerHTML = '';
+      (data.technologies || []).forEach(tech => {
+        const badge = document.createElement('span');
+        badge.className = 'px-2 py-0.5 rounded text-xs font-mono bg-indigo-950 text-indigo-300 border border-indigo-800';
+        badge.textContent = tech;
+        techContainer.appendChild(badge);
+      });
+
+      // Render Tree
+      renderFileTree(data.fileTree);
+
+      // Scroll to dashboard
+      document.getElementById('dashboard-section').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function renderFileTree(tree) {
+      const container = document.getElementById('file-tree-container');
+      container.innerHTML = '';
+
+      function buildTreeHTML(node, depth = 0) {
+        let html = '';
+        const padding = '&nbsp;'.repeat(depth * 3);
+
+        for (const key of Object.keys(node)) {
+          if (key === '__files') continue;
+          html += `<div class="text-slate-400 font-medium">${padding}📁 ${key}/</div>`;
+          html += buildTreeHTML(node[key], depth + 1);
+        }
+
+        if (node.__files) {
+          for (const file of node.__files) {
+            html += `<div class="text-slate-300">${padding}📄 ${file}</div>`;
+          }
+        }
+        return html;
+      }
+
+      container.innerHTML = buildTreeHTML(tree) || '<div class="text-slate-500">Empty tree</div>';
+    }
+
+    // Markdown formatting helper
+    function renderMarkdown(md) {
+      if (!md) return '';
+      let html = md;
+
+      // Code blocks ```lang ... ```
+      html = html.replace(/```(?:[a-z0-9]+)?\n([\s\S]*?)```/gi, (match, code) => {
+        return `<pre class="bg-slate-950 p-3.5 rounded-xl border border-slate-800 font-mono text-xs overflow-x-auto text-indigo-200 my-3"><code>${escapeHtml(code.trim())}</code></pre>`;
+      });
+
+      // Inline code `code`
+      html = html.replace(/`([^`]+)`/g, (match, code) => {
+        return `<code class="bg-slate-800 px-1.5 py-0.5 rounded text-indigo-300 font-mono text-xs">${escapeHtml(code)}</code>`;
+      });
+
+      // Headers ### or ##
+      html = html.replace(/^### (.*$)/gim, '<h4 class="text-indigo-300 font-semibold text-sm mt-4 mb-1.5">$1</h4>');
+      html = html.replace(/^## (.*$)/gim, '<h3 class="text-white font-bold text-base mt-5 mb-2">$1</h3>');
+
+      // Bold **text**
+      html = html.replace(/\*\*([^*]+)\*\*/g, '<strong class="text-white font-semibold">$1</strong>');
+
+      // Unordered lists - item
+      html = html.replace(/^\s*[-*]\s+(.*$)/gim, '<li class="ml-4 list-disc text-slate-300 my-0.5">$1</li>');
+
+      // Paragraphs
+      html = html.split('\n\n').map(p => {
+        if (p.startsWith('<pre') || p.startsWith('<h') || p.startsWith('<li')) return p;
+        return `<p class="my-1.5">${p.trim().replace(/\n/g, '<br>')}</p>`;
+      }).join('');
+
+      return html;
+    }
+
+    // Query Context
+    async function queryContext(query) {
+      const queryErr = document.getElementById('query-error');
+      queryErr.classList.add('hidden');
+
+      if (!currentRepoId) {
+        queryErr.textContent = 'No repository indexed yet. Please wait while the demo repository loads or click "Load Demo".';
+        queryErr.classList.remove('hidden');
+        await analyzeRepo('demo');
+        if (!currentRepoId) return;
+      }
+
+      const queryBtn = document.getElementById('query-btn');
+      const queryLoading = document.getElementById('query-loading');
+      const queryResult = document.getElementById('query-result');
+
+      queryBtn.disabled = true;
+      queryLoading.classList.remove('hidden');
+      queryResult.classList.add('hidden');
+
+      try {
+        lastQueryText = query;
+        const res = await fetch('/api/context/query', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ repositoryId: currentRepoId, query })
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          throw new Error(data.message || 'Failed to process context query');
+        }
+
+        renderQueryResult(data);
+      } catch (err) {
+        queryErr.textContent = err.message || 'An error occurred while retrieving context.';
+        queryErr.classList.remove('hidden');
+      } finally {
+        queryBtn.disabled = false;
+        queryLoading.classList.add('hidden');
+      }
+    }
+
+    function renderQueryResult(data) {
+      lastQueryData = data;
+
+      const queryResult = document.getElementById('query-result');
+      queryResult.classList.remove('hidden');
+
+      // Reset formatted context box for new query result
+      document.getElementById('formatted-context-box').classList.add('hidden');
+      document.getElementById('generate-btn-label').textContent = 'Generate Context';
+
+      document.getElementById('res-reduction').textContent = `${data.reductionPercentage}%`;
+      document.getElementById('res-repo-tokens').textContent = (data.repositoryTokens || 0).toLocaleString();
+      document.getElementById('res-context-tokens').textContent = (data.contextTokens || 0).toLocaleString();
+
+      const sourceTag = document.getElementById('res-source-tag');
+      sourceTag.textContent = data.answerSource === 'gemini' ? 'Gemini 3.6 Live AI' : 'Extracted Code Context';
+      sourceTag.className = data.answerSource === 'gemini' 
+        ? 'text-xs px-2.5 py-1 rounded-full bg-indigo-950 text-indigo-300 border border-indigo-800 font-mono font-medium'
+        : 'text-xs px-2.5 py-1 rounded-full bg-slate-800 text-slate-400 font-mono';
+
+      const ansContainer = document.getElementById('res-answer');
+      ansContainer.innerHTML = renderMarkdown(data.answer);
+
+      const filesList = document.getElementById('res-files-list');
+      filesList.innerHTML = '';
+      document.getElementById('res-file-count').textContent = `${(data.relevantFiles || []).length} file(s) retrieved`;
+
+      (data.relevantFiles || []).forEach(f => {
+        const item = document.createElement('div');
+        item.className = 'bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-2';
+        item.innerHTML = `
+          <div class="flex items-center justify-between text-xs font-mono">
+            <span class="text-indigo-300 font-bold">📄 ${escapeHtml(f.path)}</span>
+            <span class="text-slate-400">Score: ${f.relevanceScore} &bull; ~${f.tokenEstimate} tokens</span>
+          </div>
+          <pre class="bg-slate-900 border border-slate-800 p-3 rounded-lg text-xs text-slate-300 overflow-x-auto max-h-48"><code>${escapeHtml(f.snippet)}</code></pre>
+        `;
+        filesList.appendChild(item);
+      });
+
+      queryResult.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function escapeHtml(text) {
+      return text ? String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') : '';
+    }
+
+    // Event Listeners
+    document.getElementById('analyze-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const url = document.getElementById('repo-url-input').value.trim();
+      if (url) analyzeRepo(url);
+    });
+
+    document.getElementById('demo-btn').addEventListener('click', () => {
+      document.getElementById('repo-url-input').value = 'demo';
+      analyzeRepo('demo');
+    });
+
+    document.getElementById('query-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const q = document.getElementById('query-input').value.trim();
+      if (q) queryContext(q);
+    });
+
+    document.getElementById('query-input').addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+        e.preventDefault();
+        const q = document.getElementById('query-input').value.trim();
+        if (q) queryContext(q);
+      }
+    });
+
+    document.querySelectorAll('.preset-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const text = btn.textContent.trim();
+        document.getElementById('query-input').value = text;
+        queryContext(text);
+      });
+    });
+
+    // FIX 2: Generate Context Button Event Handler (Zero Network/Gemini Calls)
+    document.getElementById('generate-context-btn').addEventListener('click', () => {
+      if (!lastQueryData) return;
+      const markdown = generateFormattedContextMarkdown(currentRepoFullName, lastQueryText, lastQueryData);
+
+      const box = document.getElementById('formatted-context-box');
+      const textarea = document.getElementById('formatted-context-textarea');
+      const status = document.getElementById('box-copy-status');
+      const label = document.getElementById('generate-btn-label');
+
+      textarea.value = markdown;
+      box.classList.remove('hidden');
+
+      navigator.clipboard.writeText(markdown).then(() => {
+        status.textContent = '✓ Markdown context copied to clipboard!';
+        label.textContent = '✓ Copied Context!';
+        setTimeout(() => {
+          label.textContent = 'Generate Context';
+        }, 2500);
+      }).catch(() => {
+        status.textContent = 'Context formatted below. Click "Copy Markdown" to copy.';
+      });
+
+      box.scrollIntoView({ behavior: 'smooth' });
+    });
+
+    document.getElementById('copy-box-btn').addEventListener('click', () => {
+      const textarea = document.getElementById('formatted-context-textarea');
+      textarea.select();
+      navigator.clipboard.writeText(textarea.value).then(() => {
+        const status = document.getElementById('box-copy-status');
+        status.textContent = '✓ Copied to clipboard!';
+      });
+    });
+
+    document.getElementById('close-box-btn').addEventListener('click', () => {
+      document.getElementById('formatted-context-box').classList.add('hidden');
+    });
+
+    // Initialize
+    checkHealth();
+    // Auto-load demo on start
+    analyzeRepo('demo');
+  </script>
+</body>
+</html>
