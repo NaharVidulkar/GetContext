@@ -1,0 +1,91 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+:root {
+  --bg: #090A0F;
+  --surface: #11141D;
+  --surface-card: #151926;
+  --border: rgba(255, 255, 255, 0.09);
+  --border-hover: rgba(99, 102, 241, 0.35);
+  --text: #F3F4F6;
+  --muted: #9CA3AF;
+  --accent: #6366F1;
+  --accent-hover: #4F46E5;
+  --accent-light: #818CF8;
+  --accent-glow: rgba(99, 102, 241, 0.22);
+  --blue: #60A5FA;
+  --success: #34D399;
+  --error: #F87171;
+  --mouse-x: 50%;
+  --mouse-y: 30%;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root {
+  background-color: var(--bg);
+  color: var(--text);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  position: relative;
+}
+
+/* Crisp & noticeably visible grid background lines */
+.grid-bg {
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.065) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.065) 1px, transparent 1px);
+  background-size: 40px 40px;
+  background-position: center top;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Mouse-following ambient spotlight glow */
+.cursor-glow {
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(
+    650px circle at var(--mouse-x) var(--mouse-y),
+    rgba(99, 102, 241, 0.16) 0%,
+    rgba(99, 102, 241, 0.04) 45%,
+    transparent 75%
+  );
+  pointer-events: none;
+  z-index: 1;
+  transition: background 0.05s ease-out;
+}
+
+.ambient-top-glow {
+  position: absolute;
+  top: -100px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 700px;
+  height: 350px;
+  background: radial-gradient(ellipse at center, rgba(99, 102, 241, 0.15) 0%, rgba(99, 102, 241, 0.03) 50%, transparent 75%);
+  pointer-events: none;
+  z-index: 1;
+}
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.12); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(99, 102, 241, 0.4); }
+
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.font-mono { font-family: 'JetBrains Mono', monospace; }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+@media (max-width: 768px) {
+  [data-grid-two], [data-grid-response] { grid-template-columns: 1fr !important; }
+  nav[data-app-nav] { display: none !important; }
+}
+
