@@ -3,6 +3,7 @@
 **One codebase. One context layer. Every AI understands it.**
 
 🔗 **Live App:** [https://get-context.ai.studio/](https://get-context.ai.studio/)
+⚡ Built in a 3-hour prompt sprint event — from idea to a working, deployed app.
 
 ![GetContext Homepage](docs/Homepage.png)
 
