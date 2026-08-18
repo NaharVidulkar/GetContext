@@ -3,8 +3,9 @@
 **One codebase. One context layer. Every AI understands it.**
 
 🔗 **Live App:** [https://get-context.ai.studio/](https://get-context.ai.studio/)
+```text
 ⚡ Built in a 3-hour prompt sprint event — from idea to a working, deployed app.
-
+```
 ![GetContext Homepage](docs/Homepage.png)
 
 GetContext is a reusable context infrastructure layer between software repositories and AI coding assistants. Analyze a codebase once, then retrieve only the task-specific context any AI needs — instead of re-uploading the entire repository every time, and every time you switch agents.
