@@ -1,0 +1,174 @@
+import 'dotenv/config';
+import express from 'express';
+import cors from 'cors';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
+import { createServer as createViteServer } from 'vite';
+
+import { analyzeRepository, fetchRecentCommits } from './backend/src/githubFetcher.js';
+import { retrieveRelevantContext } from './backend/src/retrieval.js';
+import { generateExplanation } from './backend/src/gemini.js';
+import { estimateTokens, estimateTokensForFiles } from './backend/src/tokenEstimate.js';
+import { nextId, saveRepository, getRepository } from './backend/src/store.js';
+import { getDemoFixture } from './backend/src/demoFixture.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+app.use(cors());
+app.use(express.json());
+
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', hasGeminiKey: Boolean(process.env.GEMINI_API_KEY) });
+});
+
+app.post('/api/repository/analyze', async (req, res) => {
+  const { url } = req.body || {};
+  if (!url || typeof url !== 'string') {
+    return res.status(400).json({ error: 'INVALID_URL', message: 'A GitHub repository URL is required.' });
+  }
+
+  const isDemoRequest = /demo/i.test(url) && !/^https?:\/\/github\.com\//i.test(url);
+
+  try {
+    const analysis = isDemoRequest ? getDemoFixture() : await analyzeRepository(url);
+    if (!isDemoRequest) {
+      analysis.recentCommits = await fetchRecentCommits(analysis.owner, analysis.repo, analysis.defaultBranch);
+    }
+    res.json(await buildAndSaveRecord(url, analysis));
+  } catch (err) {
+    if (err.message === 'INVALID_URL') {
+      return res.status(400).json({ error: err.message, message: 'That does not look like a valid GitHub repository URL.' });
+    }
+    if (err.message === 'REPO_NOT_FOUND') {
+      return res.status(404).json({ error: err.message, message: 'Repository not found or is private.' });
+    }
+    const fallback = getDemoFixture();
+    const record = await buildAndSaveRecord(url, fallback);
+    res.json({
+      ...record,
+      degraded: true,
+      degradedReason: err.message,
+      message: 'Live GitHub fetch was unavailable, so this is showing the bundled demo repository instead.',
+    });
+  }
+});
+
+async function buildAndSaveRecord(url, analysis) {
+  const id = nextId();
+  const repositoryTokens = estimateTokensForFiles(analysis.files);
+
+  const KEY_FILE_PREVIEW_CHARS = 1500;
+  const keyFiles = (analysis.importantFiles || []).map((filePath) => {
+    const match = analysis.files.find((f) => f.path === filePath);
+    const content = match?.content || '';
+    return {
+      path: filePath,
+      preview: content.length > KEY_FILE_PREVIEW_CHARS
+        ? content.slice(0, KEY_FILE_PREVIEW_CHARS) + '\n...'
+        : content,
+    };
+  });
+
+  const record = {
+    id,
+    url,
+    fullName: analysis.fullName,
+    description: analysis.description,
+    defaultBranch: analysis.defaultBranch,
+    fileCount: analysis.fileCount,
+    fetchedFileCount: analysis.fetchedFileCount,
+    fileTree: analysis.fileTree,
+    technologies: analysis.technologies,
+    importantFiles: analysis.importantFiles,
+    keyFiles,
+    recentCommits: analysis.recentCommits || [],
+    files: analysis.files,
+    repositoryTokens,
+    indexed: true,
+    isDemoFixture: Boolean(analysis.isDemoFixture),
+    createdAt: new Date().toISOString(),
+  };
+  await saveRepository(id, record);
+  const { files, ...publicRecord } = record;
+  return publicRecord;
+}
+
+app.get('/api/repository/:id', async (req, res) => {
+  const repo = await getRepository(req.params.id);
+  if (!repo) return res.status(404).json({ error: 'NOT_FOUND', message: 'Repository not indexed.' });
+  const { files, ...publicRecord } = repo;
+  res.json(publicRecord);
+});
+
+app.post('/api/context/query', async (req, res) => {
+  const { repositoryId, query } = req.body || {};
+  if (!repositoryId) return res.status(400).json({ error: 'MISSING_REPOSITORY', message: 'repositoryId is required.' });
+  if (!query || !query.trim()) return res.status(400).json({ error: 'EMPTY_QUERY', message: 'A question is required.' });
+
+  const repo = await getRepository(repositoryId);
+  if (!repo) return res.status(404).json({ error: 'NOT_FOUND', message: 'Repository not indexed. Analyze it first.' });
+
+  const { relevantFiles } = retrieveRelevantContext(repo.files, query);
+
+  if (relevantFiles.length === 0) {
+    return res.json({
+      answer: 'No relevant files were found for this question in the indexed repository. Try rephrasing, or ask about a file/feature visible in the repository.',
+      relevantFiles: [],
+      contextTokens: 0,
+      repositoryTokens: repo.repositoryTokens,
+      reductionPercentage: 100,
+    });
+  }
+
+  const { answer, source } = await generateExplanation(query, relevantFiles);
+  const contextTokens = relevantFiles.reduce((sum, f) => sum + f.tokenEstimate, 0);
+  const reductionPercentage = repo.repositoryTokens
+    ? Math.max(0, Math.round((1 - contextTokens / repo.repositoryTokens) * 1000) / 10)
+    : 0;
+
+  res.json({
+    answer,
+    answerSource: source,
+    relevantFiles,
+    contextTokens,
+    repositoryTokens: repo.repositoryTokens,
+    reductionPercentage,
+  });
+});
+
+app.use('/api', (err, req, res, next) => {
+  console.error(err);
+  res.status(500).json({ error: 'INTERNAL_ERROR', message: 'Something went wrong.' });
+});
+
+if (process.env.NODE_ENV !== 'production') {
+  const vite = await createViteServer({
+    server: { middlewareMode: true, host: '0.0.0.0', port: PORT },
+    appType: 'spa',
+    root: path.resolve(__dirname, 'frontend'),
+  });
+  app.use(vite.middlewares);
+} else {
+  const primaryDist = path.resolve(__dirname, 'dist');
+  const fallbackDist = path.resolve(__dirname, 'frontend', 'dist');
+  const distPath = fs.existsSync(primaryDist) ? primaryDist : fallbackDist;
+
+  app.use(express.static(distPath));
+  app.get('*', (req, res) => {
+    const indexPath = path.join(distPath, 'index.html');
+    if (fs.existsSync(indexPath)) {
+      res.sendFile(indexPath);
+    } else {
+      res.status(404).send('Application build not found. Please run npm run build.');
+    }
+  });
+}
+
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`GetContext server running on http://0.0.0.0:${PORT}`);
+});

@@ -1,0 +1,8 @@
+{
+  "name": "GetContext",
+  "description": "One codebase. One context layer.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "entities": {
+    "repositories": {
+      "title": "Repositories",
+      "description": "Indexed codebases and metadata",
+      "properties": {
+        "url": { "type": "string" },
+        "fullName": { "type": "string" },
+        "description": { "type": "string" },
+        "fileCount": { "type": "number" },
+        "indexed": { "type": "boolean" },
+        "createdAt": { "type": "string" }
+      }
+    }
+  }
+}
